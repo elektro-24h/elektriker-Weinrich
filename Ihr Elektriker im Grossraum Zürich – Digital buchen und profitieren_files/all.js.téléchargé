@@ -1,0 +1,860 @@
+// ajax({
+//   method: 'GET',
+//   path: '__API_PATH__',
+//   getParams: {},
+//   body: {},
+//   json: false,
+//   headers: {
+//     'HEADER':'VALUE',
+//   },
+//   followup: console.log,
+// });
+
+function ajax(optsInput) {
+  let opts = {
+    method: 'GET',
+    path: '',
+    getParams: null,
+    body: null,
+    json: false,
+    bodyData: null,
+    headers: null,
+    followup: console.log,
+    ...optsInput,
+  }
+
+  if (typeof opts.getParams === 'string') {
+    opts.path += '?' + opts.getParams;
+  } else if (opts.getParams instanceof HTMLFormElement) {
+    let formData = new FormData(opts.getParams);
+    opts.path += '?';
+    for(var pair of formData.entries()) {
+      opts.path += pair[0] + '=' + encodeURIComponent(pair[1]) + '&';
+    }
+  } else if (opts.getParams instanceof FormData) {
+    let formData = opts.getParams;
+    opts.path += '?';
+    for(var pair of formData.entries()) {
+      opts.path += pair[0] + '=' + encodeURIComponent(pair[1]) + '&';
+    }
+  } else if (opts.getParams instanceof Object) {
+    opts.path += '?';
+    Object.keys(opts.getParams)
+    .map(function(key) {
+      opts.path += key + '=' + encodeURIComponent(opts.getParams[key]) + '&';
+    });
+  }
+
+  if (opts.json && opts.body instanceof Object) {
+    opts.bodyData = JSON.stringify(opts.body);
+  } else if (typeof opts.body === 'string') {
+    let form = document.querySelector(opts.body);
+    opts.bodyData = (form ? new FormData(form) : null);
+  } else if (opts.body instanceof HTMLFormElement) {
+    opts.bodyData = new FormData(opts.body);
+  } else if (opts.body instanceof Object) {
+    opts.bodyData = new FormData();
+    Object.keys(opts.body)
+    .map(function(key) {
+      opts.bodyData.append(key, opts.body[key]);
+    });
+  } else {
+    opts.bodyData = opts.body;
+  }
+
+  if (opts.headers) {
+    Object.keys(opts.body)
+    .map(function(key) {
+      xhr.setRequestHeader(key, opts.headers[key]);
+    });
+  }
+
+  // console.log(opts.path);
+
+  let xhr = new XMLHttpRequest();
+  xhr.open(opts.method, opts.path, [true]);
+  if (opts.json) {
+    xhr.setRequestHeader('Content-Type', 'application/json');
+  }
+  xhr.onload = function() {
+    let output = null;
+    try {
+      output = JSON.parse(xhr.response);
+    } catch (e) {
+      output = xhr.response;
+      console.error([e, xhr.response]);
+    } finally {
+      opts.followup(output);
+    }
+  }
+  xhr.onerror = function() {
+    console.error(xhr.response);
+  }
+  xhr.send(opts.bodyData);
+}
+
+
+
+const last_url_part = document.querySelector('.booking')?.getAttribute('data-last_url_part');
+const booking_step = document.querySelector('.booking')?.getAttribute('data-step');
+
+let booking_files = [];
+const send_booking = (step) => {
+	let formData = {};
+
+	formData.user_access_key = document.querySelector('.booking')?.getAttribute('data-user_access_key');
+
+	if (step == 2) {
+		formData.service = document.querySelectorAll('select')[0].value;
+		formData.sub_service = document.querySelectorAll('select')[1].value;
+		formData.description = document.querySelectorAll('textarea')[0].value;
+
+		let i = 0; let len = booking_files.length;
+		for (i=0; i<len; i++) {
+			formData['file_'+i] = booking_files[i];
+		}
+	} else if (step == 3) {
+		formData.urgency = slider.noUiSlider.get();
+	} else if (step == 4) {
+		formData.gender = document.querySelector('select').value;
+		formData.email = document.querySelector('input[name="email"]').value;
+		formData.forename = document.querySelector('input[name="forename"]').value;
+		formData.phone = document.querySelector('input[name="phone"]').value;
+		formData.lastname = document.querySelector('input[name="lastname"]').value;
+		formData.address = document.querySelector('input[name="address"]').value;
+		formData.company = document.querySelector('input[name="company"]').value;
+		formData.zip = document.querySelector('input[name="zip"]').value;
+		formData.location = document.querySelector('input[name="location"]').value;
+	}
+
+	formData.step = step;
+
+	ajax({
+		method: 'POST',
+		path: '/wp-json/booking/save',
+		body: formData,
+		followup: function(msg) {
+			// console.log(booking_step, msg);
+			$('.input-holder .error_cont').empty();
+			if (msg?.errors) {
+				for (const key in msg.errors) {
+					document.querySelector('.input-holder.'+key+' .error_cont').innerHTML = '<span class="error">'+msg.errors[key]+'</span>';
+				}
+			} else {
+
+				if (booking_step == 2) {
+					window.location.href = '/buchung/'+last_url_part+'/?schritt_3';
+				} else if (booking_step == 4) {
+					if (document.querySelector('input[type="checkbox"')?.checked) { // todo do not send ajax if checkbox not clicked
+						window.location.href = '/buchung/'+last_url_part+'/?abschluss';
+					} else {
+						$('.agb_error').show();
+					}
+				}
+
+			}
+		},
+	});
+}
+
+$(document).on('click', '.booking_footer button[data-back]', function() {
+	if (booking_step != 2) {
+		history.back();
+		return;
+	} else {
+		window.location.href = /buchung/;
+		return;
+	}
+});
+
+$(document).on('click', '.booking_footer button[data-next]', function() {
+	if (booking_step == 2) {
+		send_booking(2);
+	} else if (booking_step == 3) {
+		send_booking(3);
+		window.location.href = '/buchung/'+last_url_part+'/?schritt_4';
+	} else if (booking_step == 4) {
+		send_booking(4);
+	}
+});
+
+let last_service_val = '';
+$(document).on('click', '.booking_form .form_row:first-child .form-element:first-child .custom_select_option', function() {
+	if (last_service_val != '') {
+		window.location.href = /buchung/+this.getAttribute('value');
+		return;
+	}
+	last_service_val = this.getAttribute('value');
+});
+
+$(document).on('change', '.booking_form [data-upload="true"]', function(e) {
+	let html = '';
+
+	let i = 0; let len = e.target.files.length;
+	for (i=0; i<len; i++) {
+		if (
+			typeof e.target.files[i] !== 'object' ||
+			!e.target.files[i] // if browser window got canceled.
+		) {
+			return;
+		}
+	}
+
+	booking_files = [...booking_files, ...e.target.files];
+	len = booking_files.length;
+	for (i=0; i<len; i++) {
+		html += '<div class="upload_item">'+booking_files[i].name+'</div>';
+	}
+
+	document.querySelector('.booking_form .file_upload_list').innerHTML = html;
+});
+
+let slider = null;
+if (document.querySelector('.booking .slider')) {
+	slider = document.querySelector('.booking .slider');
+
+	const urgency = document.querySelector('.booking .slider_info').getAttribute('data-info');
+
+	noUiSlider.create(slider, {
+		start: [urgency],
+		step: 1,
+		behaviour: 'tap',
+		range: {
+			'min': 0,
+			'max': 4
+		},
+		tooltips: true,
+		format: {
+			// 'to' the formatted value. Receives a number.
+			to: function (value) {
+				return Math.round(value);
+			},
+			// 'from' the formatted value.
+			// Receives a string, should return a number.
+			from: function (value) {
+				return value;
+			}
+		}
+	});
+
+	slider.noUiSlider.on('update', function (value) {
+		document.querySelector('.booking .slider_info').setAttribute('data-info', value);
+	});
+}
+
+
+$(document).on('click', '.booking_form .file_upload_list .upload_item', function(e) {
+	// console.log(booking_files[$(this).index()]);
+	booking_files.splice($(this).index(), 1);
+	$(this).remove();
+});
+
+
+
+$('.slider--2').each(function() {
+  let thisSlide = $(this);
+  thisSlide.slick({
+    infinite: false,
+    slidesToShow: 2,
+    slidesToScroll: 1,
+    dots: false,
+    speed: 300,
+    prevArrow: thisSlide.closest('.slider-holder').find('.slider-prev'),
+    nextArrow: thisSlide.closest('.slider-holder').find('.slider-next'),
+    responsive: [
+    {
+      breakpoint: 769,
+      settings: {
+
+
+      }
+    },
+    {
+      breakpoint: 661,
+      settings: {
+        slidesToShow: 1,
+        slidesToScroll: 1,
+        
+      }
+    },
+    ]
+  });
+});
+
+
+$('.slider--3').each(function() {
+  let thisSlide = $(this);
+  thisSlide.slick({
+    infinite: false,
+    slidesToShow: 3,
+    slidesToScroll: 1,
+    dots: false,
+    speed: 300,
+    prevArrow: thisSlide.closest('.slider-holder').find('.slider-prev'),
+    nextArrow: thisSlide.closest('.slider-holder').find('.slider-next'),
+    responsive: [
+    {
+      breakpoint: 769,
+      settings: {
+        slidesToShow: 2,
+        slidesToScroll: 1,
+
+        
+      }
+    },
+    {
+      breakpoint: 661,
+      settings: {
+        slidesToShow: 1,
+        slidesToScroll: 1,
+
+      }
+    },
+    ]
+  });
+});
+
+
+
+$('.slider--4').each(function() {
+  let thisSlide = $(this);
+  thisSlide.slick({
+    infinite: false,
+    slidesToShow: 4,
+    slidesToScroll: 1,
+    dots: false,
+    speed: 300,
+    prevArrow: thisSlide.closest('.slider-holder').find('.slider-prev'),
+    nextArrow: thisSlide.closest('.slider-holder').find('.slider-next'),
+    responsive: [
+    {
+      breakpoint: 1025,
+      settings: {
+        slidesToShow: 3,
+        slidesToScroll: 1
+      }
+    },
+    {
+      breakpoint: 769,
+      settings: {
+        slidesToShow: 2,
+        slidesToScroll: 1,
+
+        
+      }
+    },
+    {
+      breakpoint: 661,
+      settings: {
+        slidesToShow: 1,
+        slidesToScroll: 1,
+
+      }
+    },
+    ]
+  });
+});
+
+
+
+
+$('.slider--5').each(function() {
+  let thisSlide = $(this);
+  thisSlide.slick({
+    infinite: false,
+    slidesToShow: 5,
+    slidesToScroll: 1,
+    dots: false,
+    speed: 300,
+    prevArrow: thisSlide.closest('.slider-holder').find('.slider-prev'),
+    nextArrow: thisSlide.closest('.slider-holder').find('.slider-next'),
+    responsive: [
+    {
+      breakpoint: 1281,
+      settings: {
+        slidesToShow: 4,
+        slidesToScroll: 1
+      }
+    },
+    {
+      breakpoint: 1025,
+      settings: {
+        slidesToShow: 3,
+        slidesToScroll: 1
+      }
+    },
+    {
+      breakpoint: 769,
+      settings: {
+        slidesToShow: 2,
+        slidesToScroll: 1,
+
+        
+      }
+    },
+    {
+      breakpoint: 661,
+      settings: {
+        slidesToShow: 1,
+        slidesToScroll: 1,
+
+      }
+    },
+    ]
+  });
+});
+
+
+$('.element-scroller').on('scroll', function() {
+  let elementWidth = $(this).outerWidth();
+  let scrollWidth = $(this)[0].scrollWidth - elementWidth;
+  let scrollLeft = $(this).scrollLeft();
+  let scrollPercentage = 100 / scrollWidth * scrollLeft;
+  let scrollbarSpaceWidth = $(this).next('.element-scroller-scrollbar').outerWidth() - 105;
+  let scrollThumbPos = scrollbarSpaceWidth / 100 * scrollPercentage;
+  $(this).next('.element-scroller-scrollbar').find('.element-scroller-thumb').css({'transform' : 'translateX('+scrollThumbPos+'px)'});
+});
+
+
+
+old_scrolltop = $(window).scrollTop();
+$(window).scroll(function() {
+	current_scrolltop = $(window).scrollTop();
+
+	if(current_scrolltop >= 30) {
+		document.querySelector('body').setAttribute('data-nav_smaller', true);
+	} else {
+		document.querySelector('body').removeAttribute('data-nav_smaller');
+	}
+
+	if (current_scrolltop >= 350 && old_scrolltop <= current_scrolltop) {
+		document.querySelector('body').setAttribute('data-nav_hide', true);
+	} else {
+		document.querySelector('body').removeAttribute('data-nav_hide');
+	}
+
+	old_scrolltop = current_scrolltop;
+});
+
+let mobile_nav_open_bool = false;
+$(document).on('click', '.hamburger_cont', function(e) {
+	mobile_nav_open_bool = !mobile_nav_open_bool;
+	document.querySelector('html').setAttribute('data-mobile_nav_open', mobile_nav_open_bool);
+});
+
+$(document).on('click', '.mobile_nav_overlay a[data-name="dienstleistungen"]', function(e) {
+	e.preventDefault();
+	document.querySelector('html').setAttribute('data-mobile_nav_2nd_nav_active', true);
+});
+
+$(document).on('click', '.mobile_nav_overlay .return_to_1st_nav', function(e) {
+	document.querySelector('html').setAttribute('data-mobile_nav_2nd_nav_active', false);
+});
+
+let nav_sub_floatbox_bool = false;
+function toggle_subnav() {
+	
+}
+
+$(document).on('click', '.main_nav a[data-name="dienstleistungen"]', function(e) {
+	// if scroll just go to detail page:
+	if (document.querySelector('[data-nav_smaller="true"]')) return;
+
+	e.preventDefault();
+
+	nav_sub_floatbox_bool = !nav_sub_floatbox_bool;
+	this.setAttribute('data-active', nav_sub_floatbox_bool);
+	document.querySelector('html').setAttribute('data-dropbox_open', nav_sub_floatbox_bool);
+	document.querySelector('html').setAttribute('data-nav_sub_floatbox_active', nav_sub_floatbox_bool);
+});
+
+$('.main_nav .sub_nav_hower').hover(
+	 function() {
+
+		 	// if scroll just go to detail page:
+		 	if (document.querySelector('[data-nav_smaller="true"]')) {
+		 		$('.main_nav .sub_nav_hower .nav_sub_floatbox').hide();
+		 		return;
+		 	} else {
+		 		$('.main_nav .sub_nav_hower .nav_sub_floatbox').show();
+		 	}
+
+		 	document.querySelector('.main_nav a[data-name="dienstleistungen"]').setAttribute('data-active', true);
+			document.querySelector('html').setAttribute('data-dropbox_open', true);
+			document.querySelector('html').setAttribute('data-nav_sub_floatbox_active', true);
+	 },
+	 function() {
+	 	document.querySelector('.main_nav a[data-name="dienstleistungen"]').setAttribute('data-active', false);
+			document.querySelector('html').setAttribute('data-dropbox_open', false);
+			document.querySelector('html').setAttribute('data-nav_sub_floatbox_active', false);
+	 }
+);
+
+
+
+
+
+
+
+function checkInputFilledState(element) {
+	let holder = false;
+	if ($(element).hasClass('input-holder')) {
+		holder = $(element);
+	} else {
+		holder = $(element).parent();
+	}
+
+	let input = holder.find('input');
+	let textarea = holder.find('textarea');
+	if (input.length) {
+		if (input.val()) {
+			holder.addClass('filled');
+		} else {
+			holder.removeClass('filled');
+		}
+	}
+	if (textarea.length) {
+		if (textarea.val()) {
+			holder.addClass('filled');
+		} else {
+			holder.removeClass('filled');
+		}
+	}
+
+	if (element.parentNode.classList.contains('search_create')) {
+		const val = input.val();
+		const options = $(element.parentNode).find('.custom_select_option');
+		let option_found = false;
+
+		if (val != '') {
+			options.hide();
+
+			options.each(function() {
+				if ($(this).text().toLowerCase().indexOf(val.toLowerCase()) > -1) {
+					$(this).show();
+					option_found = true;
+				}
+
+			});
+
+			if (!option_found) {
+				$(element.parentNode).find('.add_new_option')[0].setAttribute('data-show', true);
+				$(element.parentNode).find('.add_new_option a').text(val+' hinzufügen');
+			}
+
+		} else {
+			options.show();
+			$(element.parentNode).find('.add_new_option')[0].setAttribute('data-show', false);
+			$(element.parentNode).find('.add_new_option a').text('');
+		}
+
+	}
+}
+
+function checkInputCheckboxState(element) {
+	let holder = false;
+	if ($(element).hasClass('input-holder')) {
+		holder = $(element);
+	} else {
+		holder = $(element).parent();
+	}
+
+	let input = holder.find('input');
+	if (input.is(':checked')) {
+		holder.addClass('filled');
+	} else {
+		holder.removeClass('filled');
+	}
+}
+
+$('.input-holder--text, .input-holder--password, .input-holder--email, .input-holder--date, .input-holder--textarea').each(function() {
+	checkInputFilledState(this);
+});
+$('.input-holder--checkbox, .input-holder--radio').each(function() {
+	checkInputCheckboxState(this);
+});
+
+
+$(document).on('input change focus', '.input-holder--text input, .input-holder--password input, .input-holder--email input, .input-holder--date input, .input-holder--textarea textarea', function() {
+	checkInputFilledState(this);
+});
+
+$(document).on('input change focus', '.input-holder--checkbox input', function() {
+	checkInputCheckboxState(this);
+});
+
+$('.input-holder--radio input').on('input change focus', function() {
+	checkInputCheckboxState(this);
+	$('.input-holder--radio').each(function() {
+		checkInputCheckboxState(this);
+	});
+});
+
+
+$(document).on('input change focus', '.input-holder.select select', function() {
+	let holder = $(this).parent();
+	let input = holder.find('input');
+	if (!$(this).find('option:selected').prop('disabled')) {
+		let value = $(this).find('option:selected').text();
+		input.val(value);
+		input.trigger('input');
+	}
+});
+
+$(document).on('input change focus', '.input-holder input', function() {
+	$(this).parent().removeClass('error');
+	$(this).parent().removeClass('error-min');
+});
+
+
+$(document).on('click', '.input-holder--text.select', function() {
+	$('.input-holder').removeClass('error');
+	$('.input-holder').removeClass('error-min');
+});
+
+
+$(".input-holder--textarea textarea").each(function () {
+	this.setAttribute("style", "height: auto; overflow-y:hidden;");
+	this.setAttribute("rows", 5);
+
+	document.querySelector('.max_counter').innerHTML = this.value.length+'/'+420+' Zeichen';
+
+}).on("input", function () {
+	let max = 420;
+	let value = this.value;
+	if (value.length > max) {
+		value = value.substr(0, max);
+	}
+
+	document.querySelector('.max_counter').innerHTML = value.length+'/'+max+' Zeichen';
+
+	// regarding rows growing: https://codepen.io/Libor_G/pen/eyzwOx
+	const textareaLineHeight = 32;
+	const minRows = 5;
+
+	const previousRows = this.rows;
+	this.rows = minRows; // reset number of rows in textarea
+
+	const currentRows = Math.floor(
+		(this.scrollHeight - 32) / textareaLineHeight
+	);
+
+	this.rows = currentRows;
+	this.value = value;
+});
+
+
+$('.input-holder.input-holder--password svg').click(function() {
+	let input = $(this).closest('.input-holder').find('input');
+	let currentType = input.attr('type');
+	if (currentType == 'text') {
+		input.attr('type', 'password');
+	} else {
+		input.attr('type', 'text');
+	}
+});
+
+
+$(document).on('click', '.custom_select_option', function() {
+	let value = $(this).attr('value');
+	let index = $(this).index() + 1;
+	let select = $(this).closest('.input-holder').find('select');
+
+	if (this.parentNode.parentNode.classList.contains('search_create')) {
+		index = $(this).index() - 1;
+	}
+
+	$(this).parent().find('.custom_select_option').removeClass('selected');
+	$(this).addClass('selected');
+	// $(select).find('option[value="'+value+'"]').prop('selected', true);
+	$(select).find('option').eq(index).prop('selected', true);
+	select.trigger('input');
+});
+
+$('.input-holder.select select option:not([value=""]):selected').each(function() {
+	let value = $(this).val();
+	$(this).closest('.input-holder').find('.custom_select_option[value="'+value+'"]').click();
+});
+
+$(document).on('click', '.input-holder.select', function() {
+	$('.darkener').removeAttr('style');
+	if ($(this).hasClass('open')) {
+		$('.input-holder.select').removeClass('open');
+		$(this).removeClass('open');
+		document.querySelector('body').setAttribute('data-dropbox_open', false);
+	} else {
+		$('.input-holder.select').removeClass('open');
+		$(this).addClass('open');
+		document.querySelector('body').setAttribute('data-dropbox_open', true);
+	}
+
+});
+
+// function selectDarkenerChecker() {
+// 	$('.select.open .darkener:not([style])').each(function() {
+// 		let darkenerPositionTop =  $(this).offset().top;
+// 		let darkenerPositionLeft =  $(this).offset().left;
+// 		if (darkenerPositionTop && darkenerPositionLeft) {
+// 			$(this).css({'transform' : 'translateX(-'+darkenerPositionLeft+'px) translateY(-'+darkenerPositionTop+'px)'});
+// 		}
+// 	});
+// 	requestAnimationFrame(selectDarkenerChecker);
+// }
+// requestAnimationFrame(selectDarkenerChecker);
+
+$(document).click(function(event) {
+	if (!$(event.target).closest('.input-holder.select').hasClass('select')) {
+		$('.input-holder.select').removeClass('open');
+		document.querySelector('body').setAttribute('data-dropbox_open', false);
+	}
+});
+
+
+
+
+/* FILES */
+// https://stackoverflow.com/questions/29394126/open-several-times-multiple-file-input-without-losing-earlier-selected-files
+$(document).on('input', '.input-holder--file input', function() {
+	let fileNames = $(this).get(0).files;
+	let inputName = $(this).attr('name');
+	let holder = $(this).closest('.input-holder--file');
+	$(holder).find('.uploaded-file').remove();
+	$(holder).prepend('<div class="uploaded-file">'+fileNames[0].name+'</div>');
+
+	let nameAttribute = $(this).attr('name');
+	if (nameAttribute.includes('[')) {
+
+		if (fileNames[0]) {
+			let toClone = $(this).closest('.input-holder--file');
+			toClone.clone().insertAfter(toClone);
+			let clonedElement = toClone.next();
+			clonedElement.find('input').val('');
+			clonedElement.find('input').trigger('input');
+		}	
+	}
+
+});
+
+
+$(document).on('click', '.uploaded-file', function() {
+	let nameAttribute = $(this).parent().find('input').attr('name');
+	if (nameAttribute.includes('[')) {
+		$(this).closest('.input-holder--file').remove();
+	} else {
+		$(this).closest('.input-holder--file').find('input').val(null);
+		$(this).remove();
+	}
+	
+});
+
+
+
+function validate(holder, checkInvisible) {
+	let success = true;
+	let errorReferences = [];
+	$(holder).find('.form-element [required]').each(function() {
+		if ($(this).attr('type') === 'checkbox' || $(this).attr('type') === 'radio') {
+			let name = $(this).attr('name');
+			let checkboxes = document.querySelectorAll('[name="' + name + '"]:not([type="hidden"])');
+
+			let checkedCount = 0;
+			checkboxes.forEach((box) => {
+				if (box.closest('.form-element').classList.contains('filled')) {
+					checkedCount = checkedCount + 1;
+				}
+			});
+
+			if (checkedCount === 0) {
+				if (checkInvisible) {
+					if ($(this).is(':visible')) {
+						errorReferences.push(document.querySelector('[name="' + name + '"]:not([type="hidden"])').closest('.form-element'));
+						// document.querySelector('[name="' + name + '"]:not([type="hidden"])').closest('.form-element').classList.add('error');
+						success = false;
+					}
+				} else {
+					errorReferences.push(document.querySelector('[name="' + name + '"]:not([type="hidden"])').closest('.form-element'));
+					// document.querySelector('[name="' + name + '"]:not([type="hidden"])').closest('.form-element').classList.add('error');
+					success = false;
+				}
+			}
+		} else {
+			if (checkInvisible) {
+				if ($(this).is(':invalid')) {
+					errorReferences.push($(this).closest('.form-element'));
+					// $(this).closest('.form-element').addClass('error');
+					success = false;
+				}
+			} else {
+				if ($(this).is(':invalid') && $(this).is(':visible')) {
+					errorReferences.push($(this).closest('.form-element'));
+					// $(this).closest('.form-element').addClass('error');
+					success = false;
+				}
+			}
+		}
+	});
+
+	$(holder).find('.form-element input:not([required])').each(function() {
+		if (checkInvisible) {
+			if ($(this).is(':invalid') && $(this).val() !== '') {
+				errorReferences.push($(this).closest('.form-element'));
+				// $(this).closest('.form-element').addClass('error');
+				success = false;
+			}
+		} else {
+			if ($(this).is(':invalid') && $(this).is(':visible') && $(this).val() !== '') {
+				// $(this).closest('.form-element').addClass('error');
+				errorReferences.push($(this).closest('.form-element'));
+				success = false;
+			}
+		}
+	});
+	console.log(errorReferences);
+	if (errorReferences.length > 4) {
+		errorReferences[0].addClass('error');
+		errorReferences.forEach((ref) => {
+			ref.addClass('error-min');
+		});
+	} else {
+		errorReferences.forEach((ref) => {
+			ref.addClass('error');
+		});
+	}
+
+	return success;
+}
+
+$(document).on('click', '.form-element .add_new_option', function(e) {
+	e.preventDefault();
+
+	let formData = {};
+	formData.service = document.querySelectorAll('select')[0].value;
+	formData.val = $(e.target.parentNode.parentNode.parentNode).find('input').val();
+
+	ajax({
+		method: 'POST',
+		path: '/wp-json/sub_service/create',
+		body: formData,
+		followup: function(msg) {
+			console.log(msg);
+			location.reload();
+		},
+	});
+
+});
+
+
+
+$(document).on('input change', '.checkbox-holder input', function() {
+	checkboxInit(this);
+});
+
+function checkboxInit(element) {
+	let checked = $(element).prop('checked');
+	if (checked) {
+		$(element).closest('.checkbox-holder').addClass('checkbox-holder--checked');
+	} else {
+		$(element).closest('.checkbox-holder').removeClass('checkbox-holder--checked');
+	}
+}
+
